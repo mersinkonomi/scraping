@@ -1,0 +1,78 @@
+import os
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+
+
+base_url = ""
+start_url = base_url + ""
+output_dir = ""
+os.makedirs(output_dir, exist_ok=True)
+
+def get_soup(url):
+    r = requests.get(url)
+    r.raise_for_status()
+    return BeautifulSoup(r.content, "html.parser")
+
+def extract_poet_links(soup):
+    poets = []
+    for h3 in soup.select("h3.page-header.item-title"):
+        a = h3.find("a")
+        if a:
+            name = a.text.strip().replace("/", "-")
+            link = urljoin(base_url, a["href"])
+            poets.append((name, link))
+    return poets
+
+def extract_poem_links(poet_soup):
+    poems = []
+    for a in poet_soup.select("a.mod-articles-category-title"):
+        title = a.get_text(strip=True)
+        link = urljoin(base_url, a["href"])
+        #.append((title, link))
+    return #
+
+def extract_#_text(#_url):
+    soup = get_soup(#_url)
+    body = soup.find("div", itemprop="articleBody")
+    if not body:
+        return ""
+   
+    lines = list(body.stripped_strings)
+    return "\n".join(lines)
+
+
+
+soup = get_soup(start_url)
+poets = extract_#_links(soup)
+print(f" found {len(#)} items")
+
+
+for name,#_url in #:
+    filepath = os.path.join(output_dir, f"{name}.txt")
+    if os.path.exists(filepath):
+        print(f"{name} exists")
+        continue
+
+    print(f"\n {name}")
+    try:
+       #_soup = get_soup(#_url)
+        #_links = extract_#_links(#_soup)
+
+        if not #_links:
+            print("not found")
+            continue
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            for title, #_url in #_links:
+                print(f"  {title}")
+                try:
+                    content = extract_#_text(poem_url)
+                    f.write(f"{title}\n{content}\n{'-'*40}\n")
+                except Exception as e:
+                    print(f"  error: {e}")
+
+        print(f"saved {len($_links)} ")
+
+    except Exception as e:
+        print(f"error {name}: {e}")
