@@ -1,0 +1,18 @@
+# 🔢 Token Counter for Greek Texts (Meltemi-7B)
+
+This script counts the number of tokens across a folder of `.txt` files using the `Meltemi-7B-v1.5` tokenizer from Hugging Face.
+
+## 📦 What It Does
+
+- Recursively walks through a folder of `.txt` files
+- Handles both `UTF-8` and `ISO-8859-7` encodings
+- Counts characters and tokens per file
+- Prints total token count across all files
+
+## 🔧 Requirements
+
+Install the Hugging Face Transformers library:
+
+```bash
+pip install transformers
+ 
