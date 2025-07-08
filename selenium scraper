@@ -1,0 +1,104 @@
+
+import os
+import csv
+import time
+import shutil
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.common.exceptions import NoSuchElementException
+
+# === CONFIGURATION ===
+download_dir = ""
+csv_path = ""
+os.makedirs(download_dir, exist_ok=True)
+
+# === SETUP CHROME (NOT headless!) ===
+options = Options()
+options.add_experimental_option("prefs", {
+    "download.default_directory": download_dir,
+    "download.prompt_for_download": False,
+    "download.directory_upgrade": True,
+    "plugins.always_open_pdf_externally": True
+})
+driver = webdriver.Chrome(service=Service("/usr/local/bin/chromedriver"), options=options)
+
+#  Wait before starting, in case of cooldown needed
+print(" Sleeping before starting (ban cooldown)...")
+# time.sleep(600)  # Optional cooldown sleep
+print("Starting download loop...")
+
+# === LOOP THROUGH BOOK URLs ===
+with open(csv_path, newline='', encoding='utf-8') as f:
+    reader = csv.DictReader(f)
+
+    for i, row in enumerate(reader):
+        #_url = row["#_page_url"]
+
+        # === Build expected filename BEFORE checking it ===
+        expected_title = f"#_{i+1}"
+        expected_filename = f"{expected_title}.pdf"
+        expected_path = os.path.join(download_dir, expected_filename)
+
+        # === Skip if already downloaded and non-empty ===
+        if os.path.exists(expected_path):
+            size_kb = os.path.getsize(expected_path) / 1024
+            if size_kb > 10:
+                print(f" Skipping (already downloaded): {expected_filename} ({size_kb:.1f} KB)")
+                continue
+            else:
+                print(f" Found empty or small file, re-downloading: {expected_filename}")
+                os.remove(expected_path)
+
+        print(f"[{i+1}] Visiting: {#_url}")
+
+        # === Cleanup previous incomplete downloads ===
+        for f in os.listdir(download_dir):
+            if f.endswith(".crdownload"):
+                os.remove(os.path.join(download_dir, f))
+
+        # === Open the # page ===
+        try:
+            driver.get(#_url)
+            time.sleep(5)
+        except Exception:
+            print(" Error loading page, skipping...")
+            continue
+
+        # === Try to extract # title ===
+        try:
+            title = driver.find_element(By.XPATH, "//h2[@class='page-header']").text.strip()
+        except:
+            title = expected_title
+        title = title.replace("/", "_").replace("\", "_")[:100]
+
+        # === Submit the PDF download form ===
+        try:
+            pdf_form = driver.find_element(By.XPATH, "//form[contains(@action, '.pdf') and contains(@action, 'retrieve')]")
+            driver.execute_script("arguments[0].submit();", pdf_form)
+            print(f" Submitted download form for: {title}")
+            time.sleep(15)  # Wait to avoid rate-limiting
+        except NoSuchElementException:
+            print(f"❌ No PDF form found for: {title}")
+            continue
+
+        # === Wait until download completes ===
+        for _ in range(60):
+            if any(f.endswith(".crdownload") for f in os.listdir(download_dir)):
+                time.sleep(1)
+            else:
+                break
+
+        # === Rename latest PDF ===
+        files = [f for f in os.listdir(download_dir) if f.endswith(".pdf")]
+        if files:
+            latest_file = max([os.path.join(download_dir, f) for f in files], key=os.path.getctime)
+            new_path = os.path.join(download_dir, f"{title}.pdf")
+            shutil.move(latest_file, new_path)
+            print(f" Downloaded and saved as: {title}.pdf")
+        else:
+            print(f" No PDF downloaded for: {title}")
+
+driver.quit()
+print(" All done.")
