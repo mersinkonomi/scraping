@@ -1,0 +1,28 @@
+import os
+from transformers import AutoTokenizer
+
+tokenizer = AutoTokenizer.from_pretrained("ilsp/Meltemi-7B-v1.5")
+folder = ""
+total_tokens = 0
+
+for root, dirs, files in os.walk(folder):
+    for filename in files:
+        if filename.endswith(".txt"):
+            filepath = os.path.join(root, filename)
+
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    text = f.read()
+            except UnicodeDecodeError:
+                try:
+                    with open(filepath, "r", encoding="ISO-8859-7") as f:
+                        text = f.read()
+                except UnicodeDecodeError:
+                    print(f"Skipped (encoding error): {filename}")
+                    continue
+
+            tokens = tokenizer.encode(text, add_special_tokens=False)
+            print(f"{filepath} — Chars: {len(text)},  Tokens: {len(tokens)}")
+            total_tokens += len(tokens)
+
+print(f"\n Total tokens: {total_tokens}")
