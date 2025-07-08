@@ -1,0 +1,139 @@
+import os
+import re
+import csv
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+from tqdm import tqdm
+
+# === Configuration ===
+BASE_URL = "#"
+DOWNLOAD_FOLDER = ""
+HEADERS = {"User-Agent": "Mozilla/5.0"}
+
+os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+
+# === Fetch and parse a page ===
+def get_soup(url):
+    response = requests.get(url, headers=HEADERS)
+    response.raise_for_status()
+    return BeautifulSoup(response.text, "html.parser")
+
+# === Extract category links from homepage ===
+def extract_category_links():
+    soup = get_soup(BASE_URL)
+    category_links = []
+
+    for a in soup.find_all("a", href=True):
+        text = a.get_text(strip=True)
+        href = a["href"]
+
+        if re.search(r"/index\.php/.*", href) and any(
+            kw in text for kw in [
+                "#", "#", "#", "#",
+                "#", "#"
+            ]
+        ):
+            full_url = urljoin(BASE_URL, href)
+            category_links.append((text, full_url))
+
+    return category_links
+
+# === Extract paginated subpages ===
+def extract_subpages_with_pagination(category_url):
+    subpage_links = set()
+    seen_urls = set()
+    page = 0
+    step = 10
+
+    while True:
+        if "?start=" in category_url:
+            paginated_url = re.sub(r"start=\d+", f"start={page}", category_url)
+        elif "?" in category_url:
+            paginated_url = f"{category_url}&start={page}"
+        else:
+            paginated_url = f"{category_url}?start={page}"
+
+        print(f"Crawling page: {paginated_url}")
+        try:
+            soup = get_soup(paginated_url)
+        except Exception as e:
+            print(f"Failed to load page: {e}")
+            break
+
+        current_links = {
+            urljoin(paginated_url, a['href'])
+            for a in soup.find_all("a", href=True)
+            if "index.php" in a['href']
+            and not a['href'].endswith(".pdf")
+            and not a['href'].startswith("mailto:")
+        }
+
+        new_links = current_links - seen_urls
+        if not new_links:
+            break
+
+        subpage_links.update(new_links)
+        seen_urls.update(new_links)
+        page += step
+
+    return list(subpage_links)
+
+# === Download files from subpages ===
+def extract_and_download_files(category_name, category_url, csv_writer):
+    print(f"\n{category_name}")
+    subpage_links = extract_subpages_with_pagination(category_url)
+
+    category_folder = os.path.join(
+        DOWNLOAD_FOLDER,
+        re.sub(r"[^\w\s]", "", category_name).strip().replace(" ", "_")
+    )
+    os.makedirs(category_folder, exist_ok=True)
+
+    for subpage_url in tqdm(subpage_links, desc=f"🔍 Searching in {category_name}"):
+        try:
+            sub_soup = get_soup(subpage_url)
+
+            title_tag = sub_soup.find("h2") or sub_soup.find("title")
+            subpage_title = title_tag.get_text(strip=True) if title_tag else "N/A"
+
+            file_links = []
+
+            for a in sub_soup.find_all("a", href=True):
+                if a['href'].lower().endswith(('.pdf', '.doc', '.docx', '.ppt', '.pptx', '.zip')):
+                    file_links.append(urljoin(subpage_url, a['href']))
+
+            for file_url in file_links:
+                filename = file_url.split("/")[-1].split("?")[0]
+                filepath = os.path.join(category_folder, filename)
+
+                if not os.path.exists(filepath):
+                    try:
+                        with requests.get(file_url, headers=HEADERS, stream=True, timeout=15) as r:
+                            r.raise_for_status()
+                            with open(filepath, "wb") as f:
+                                for chunk in r.iter_content(chunk_size=8192):
+                                    f.write(chunk)
+                        print(f" Downloaded: {filename}")
+                    except Exception as e:
+                        print(f"Error downloading {file_url}: {e}")
+                        continue
+                else:
+                    print(f"Already exists: {filename}")
+
+                csv_writer.writerow([category_name, subpage_title, filename, file_url])
+
+        except Exception as e:
+            print(f"Failed subpage: {subpage_url}: {e}")
+
+# === Main ===
+if __name__ == "__main__":
+    with open("ekdd_metadata.csv", "w", newline='', encoding="utf-8") as metadata_file:
+        csv_writer = csv.writer(metadata_file)
+        csv_writer.writerow(["Category", "Subpage Title", "File Name", "File URL"])
+
+        categories = extract_category_links()
+        for name, url in categories:
+            extract_and_download_files(name, url, csv_writer)
+
+    print("\nfiles are in ``, metadata saved in ``.")
